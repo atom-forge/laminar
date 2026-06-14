@@ -24,7 +24,8 @@
 		}
 	},
 	"repository": {
-		"url": "git://github.com/atom-forge/laminar.git"
+		"type": "git",
+		"url": "git+https://github.com/atom-forge/laminar.git"
 	},
 	"files": [
 		"dist"
