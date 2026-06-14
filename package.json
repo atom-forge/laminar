@@ -1,0 +1,43 @@
+{
+	"name": "@atom-forge/laminar",
+	"version": "0.1.0",
+	"description": "Lightweight, type-safe layered architecture and dependency injection system",
+	"keywords": [
+		"laminar",
+		"di",
+		"dependency-injection",
+		"layer",
+		"typescript"
+	],
+	"author": {
+		"name": "Gergely Laborci",
+		"url": "https://github.com/laborci"
+	},
+	"license": "MIT",
+	"type": "module",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"exports": {
+		".": {
+			"import": "./dist/index.js",
+			"types": "./dist/index.d.ts"
+		}
+	},
+	"repository": {
+		"url": "git://github.com/atom-forge/laminar.git"
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsc",
+		"prepublishOnly": "bun run build",
+		"release": "npm publish --access public",
+		"pub-check": "bun run scripts/pub-check.ts",
+		"pub": "bun run scripts/pub.ts"
+	},
+	"devDependencies": {
+		"@types/node": "^25.3.1",
+		"typescript": "^5.0.0"
+	}
+}
