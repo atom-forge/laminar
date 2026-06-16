@@ -1,6 +1,6 @@
 {
 	"name": "@atom-forge/laminar",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "Lightweight, type-safe layered architecture and dependency injection system",
 	"keywords": [
 		"laminar",
