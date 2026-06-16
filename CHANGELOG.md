@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.1] - 2026-06-16
+
+### Added
+- Optional `assemble` hook as a second argument for creator functions (e.g. `createApi(defs, { assemble: (self, ...factoryArgs) => { ... } })`). It runs synchronously immediately after the layer has been fully assembled, making it easy to run imperative setup (like route or middleware registration) without custom wrapper functions.
+
+---
+
 ## [0.4.0] - 2026-06-16
 
 ### Added
