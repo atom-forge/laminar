@@ -14,7 +14,7 @@ Egy réteg egy objektumstruktúra, ami önálló elemekből (modulok, service-ek
 
 ### Factory
 
-Egy factory egy egyszerű függvény, amely a réteg egy elemét hozza létre. Paraméterként megkaphatja más rétegek elemeit, vagy akár a saját rétegén belüli más elemeket is (self-referencia). A factory-k által visszaadott objektumok együttesen alkotják a teljes réteget.
+Egy factory egy egyszerű függvény, amely a réteg egy elemét hozza létre. Paraméterként megkaphatja más rétegek elemeit, vagy akár a saját rétegén belüli más elemeket is (self-referencia). A factory-k által visszaadott objektumok együttesen alkotják a teljes réteget. Egy factory visszaadhatja az értékét közvetlenül vagy `Promise`-ként is — a self-referencián keresztül a többi factory mindig a már feloldott értéket látja.
 
 ### `internal`
 
@@ -57,7 +57,7 @@ Utility type: egy `Layer<...>` típusból kivonja a tuple formát `[OuterArgs, S
 
 ### `makeLayer<L>(resolver)`
 
-Egy réteg létrehozója. Visszaad egy `[define, create]` tuple-t.
+nEgy réteg létrehozója. Visszaad egy `[define, create]` tuple-t. A `create(...)` által visszaadott függvény async — mindig `Promise<SelfT>`-t ad vissza, függetlenül attól, hogy a factory-k szinkronok vagy aszinkronok, ezért a hívás helyén `await`-elni kell.
 
 ```ts
 const myLayer = makeLayer<FromLayer<MyLayerType>>(
@@ -141,7 +141,7 @@ Végül az alkalmazás indításakor a `createServices` függvénnyel hozzuk lé
 import { createServices } from './services';
 import { config } from './config';
 
-const services = createServices(config);
+const services = await createServices(config);
 services.myService.doSomething();
 ```
 
@@ -259,4 +259,4 @@ export const createServices = serviceCreatorFactory({
 });
 ```
 
-Amikor az alkalmazás elindul, a `createServices(config)` hívás lazy módon, a factory-k lefuttatásával felépíti a `Services` konténert. Ezt a konténert (pontosabban annak `PublicLayer` változatát) adjuk majd tovább a `Modules` réteg factory-jának.
+Amikor az alkalmazás elindul, az `await createServices(config)` hívás lazy módon, a factory-k lefuttatásával felépíti a `Services` konténert. Ezt a konténert (pontosabban annak `PublicLayer` változatát) adjuk majd tovább a `Modules` réteg factory-jának.

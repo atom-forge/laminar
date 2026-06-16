@@ -14,7 +14,7 @@ A layer is an object structure containing individual elements (modules, services
 
 ### Factory
 
-A factory is a simple function that creates one element of the layer. It can receive elements from other layers, or even other elements from its own layer (self-reference). The objects returned by the factories collectively form the completed layer.
+A factory is a simple function that creates one element of the layer. It can receive elements from other layers, or even other elements from its own layer (self-reference). The objects returned by the factories collectively form the completed layer. A factory may return its value directly or as a `Promise`; either way, the resolved value is what other factories see through self-reference.
 
 ### `internal`
 
@@ -57,7 +57,7 @@ Utility type: extracts the tuple format `[OuterArgs, SelfT, FactoryArgs]` from a
 
 ### `makeLayer<L>(resolver)`
 
-Creates a layer. Returns a `[define, create]` tuple.
+Creates a layer. Returns a `[define, create]` tuple. The `create(...)` function it produces is async — it always returns `Promise<SelfT>`, regardless of whether the underlying factories are sync or async, so call sites must `await` it.
 
 ```ts
 const myLayer = makeLayer<FromLayer<MyLayerType>>(
@@ -141,7 +141,7 @@ Finally, when the application starts, initialize your layer using the `createSer
 import { createServices } from './services';
 import { config } from './config';
 
-const services = createServices(config);
+const services = await createServices(config);
 services.myService.doSomething();
 ```
 
@@ -259,4 +259,4 @@ export const createServices = serviceCreatorFactory({
 });
 ```
 
-When the application starts, calling `createServices(config)` lazily executes the factories to construct the `Services` container.
+When the application starts, calling `await createServices(config)` lazily executes the factories to construct the `Services` container.

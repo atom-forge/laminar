@@ -19,13 +19,13 @@ export type PublicLayer<T> = {
 
 type AnyRecord = Record<string, unknown>;
 
-function assemble<T extends AnyRecord>(
-	defs: { [K in keyof T]: (...args: any[]) => T[K] },
+async function assemble<T extends AnyRecord>(
+	defs: { [K in keyof T]: (...args: any[]) => T[K] | Promise<T[K]> },
 	getArgs: (self: T) => unknown[],
-): T {
+): Promise<T> {
 	const items = {} as T;
 	for (const key of Object.keys(defs) as Array<keyof T>) {
-		items[key] = defs[key](...getArgs(items));
+		items[key] = await Promise.resolve(defs[key](...getArgs(items)));
 	}
 	return items;
 }
@@ -43,7 +43,7 @@ function assemble<T extends AnyRecord>(
 // Adding a new layer is just a 3-line wrapper — see the pre-built helpers below.
 
 type LayerDefs<FactoryArgs extends unknown[], SelfT extends AnyRecord> = {
-	[K in keyof SelfT]: (...args: FactoryArgs) => SelfT[K];
+	[K in keyof SelfT]: (...args: FactoryArgs) => SelfT[K] | Promise<SelfT[K]>;
 };
 
 export type Layer<
@@ -51,8 +51,8 @@ export type Layer<
 	SelfT extends AnyRecord = AnyRecord,
 	FactoryArgs extends unknown[] = unknown[],
 > = [
-	<T>(factory: (...args: FactoryArgs) => T) => (...args: FactoryArgs) => T,
-	(defs: LayerDefs<FactoryArgs, SelfT>) => (...outerArgs: OuterArgs) => SelfT,
+	<T>(factory: (...args: FactoryArgs) => T | Promise<T>) => (...args: FactoryArgs) => T | Promise<T>,
+	(defs: LayerDefs<FactoryArgs, SelfT>) => (...outerArgs: OuterArgs) => Promise<SelfT>,
 ];
 
 /** Extracts the tuple form [OuterArgs, SelfT, FactoryArgs] from a LayerShape type. */
@@ -76,5 +76,6 @@ export function makeLayer(resolver: any): any {
 	const define = <T>(factory: (...args: any[]) => T) => factory;
 	const create = (defs: any) => (...outerArgs: any[]): any =>
 		assemble(defs, (self) => resolver(outerArgs, self));
+
 	return [define, create];
 }

@@ -38,8 +38,8 @@ Helper type to extract the `[OuterArgs, SelfT, FactoryArgs]` tuple from a `Layer
 
 ### `makeLayer(resolver)`
 Returns a `[define, create]` tuple where:
-- `define`: Type-safe factory definition helper: `const factory = define((...factoryArgs) => ({ ... }))`.
-- `create`: Factory assembler: `const createContainer = create({ factoryA, factoryB })`.
+c- `define`: Type-safe factory definition helper: `const factory = define((...factoryArgs) => ({ ... }))`. Factories may return their value directly or as a `Promise`.
+- `create`: Factory assembler: `const createContainer = create({ factoryA, factoryB })`. The resulting `createContainer(...)` function is always async — it returns `Promise<SelfT>` and must be `await`ed, regardless of whether the factories themselves are sync or async.
 - `resolver`: Mapping function `(outerArgs: OuterArgs, self: SelfT) => FactoryArgs`.
 
 ---
@@ -136,8 +136,8 @@ import { createModules } from './modules';
 const config = { smtp: "smtp.example.com" };
 
 // Boot the application
-const services = createServices(config);
-const modules = createModules(config, services);
+const services = await createServices(config);
+const modules = await createModules(config, services);
 
 await modules.auth.login("user@example.com");
 ```
