@@ -30,6 +30,5 @@ jobs:
           else
             echo "package.json already at $current, skipping bump"
           fi
-      - run: bun run scripts/changelog-release.ts
       - run: bun run build
       - run: npm publish --access public --ignore-scripts --provenance

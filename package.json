@@ -28,7 +28,9 @@
 		"url": "git+https://github.com/atom-forge/laminar.git"
 	},
 	"files": [
-		"dist"
+		"dist",
+		"docs",
+		"CHANGELOG.md"
 	],
 	"scripts": {
 		"build": "tsc",

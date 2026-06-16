@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.2.0] - 2026-06-16
+
 ### Changed
 - **Breaking:** `assemble` is now async — factory return values are `await`ed, so factories may return `T | Promise<T>`. The creator function returned by a layer's `create` now returns `Promise<SelfT>` instead of `SelfT`, so call sites must `await` it (e.g. `export const app = await createApp(config);`).
 
