@@ -10,11 +10,11 @@ The core philosophy is that layers are assembled **lazily** using **factories**,
 
 ### Layer
 
-A layer is an object structure containing individual elements (modules, services, etc.). In Laminar, a layer is defined by a set of factory functions. These factories are responsible for creating each element of the layer.
+A layer is an object structure containing individual components (modules, services, etc.). In Laminar, a layer is defined by a set of factory functions. These factories are responsible for creating each component of the layer.
 
 ### Factory
 
-A factory is a simple function that creates one element of the layer. It can receive elements from other layers, or even other elements from its own layer (self-reference). The objects returned by the factories collectively form the completed layer. A factory may return its value directly or as a `Promise`; either way, the resolved value is what other factories see through self-reference.
+A factory is a simple function that creates one component of the layer. It can receive components from other layers, or even other components from its own layer (self-reference). The objects returned by the factories collectively form the completed layer. A factory may return its value directly or as a `Promise`; either way, the resolved value is what other factories see through self-reference.
 
 ### `internal`
 
@@ -55,7 +55,7 @@ The type definition of a layer. It contains two tools in a tuple:
 
 Utility type: extracts the tuple format `[OuterArgs, SelfT, FactoryArgs]` from a `Layer<...>` type. Primarily used in the form `makeLayer<FromLayer<MyLayer>>(...)`.
 
-### `makeLayer<L>(resolver)`
+### `makeLayer<L>(resolver, options?)`
 
 Creates a layer. Returns a `[define, create]` tuple. The `create(...)` function it produces is async — it always returns `Promise<SelfT>`, regardless of whether the underlying factories are sync or async, so call sites must `await` it.
 
@@ -66,6 +66,45 @@ const myLayer = makeLayer<FromLayer<MyLayerType>>(
 ```
 
 The role of the `resolver` is to assemble the factory arguments tuple based on `outerArgs` (arguments passed to the creator) and `self` (the container currently being assembled).
+
+The optional `options.skipInit: boolean` disables the automatic `init` run (see below) — defaults to `false`.
+
+### `onInit(fn)` / `onDispose(fn)`
+
+Declares lifecycle hooks on a component — spread the result into the factory's return object. No extra wrapper, no change to the factory signature.
+
+```ts
+export const prismaService = defineService((config, services) => {
+  const pool = new Pool(config.database);
+  return {
+    db: new PrismaClient({ adapter: new PrismaPg(pool) }),
+    ...onDispose(() => pool.end()),
+    ...onInit(() => pool.query('SELECT 1')),
+  };
+});
+```
+
+`create(...)` automatically runs `onInit` hooks on the freshly built layer by default — no separate `init()` call needed:
+
+```ts
+const services = await createServices(config); // already initialized
+```
+
+If you don't want that (e.g. in tests, or when you want to control when initialization happens), pass `{ skipInit: true }` to `makeLayer` and call `init()` manually when ready.
+
+### `init(...layers)` / `dispose(...layers)`
+
+Accept any number of layers and recursively walk every component in each, running its `onInit`/`onDispose` hooks. `init` runs the given layers in build order (and depth-first within each); `dispose` can be called with the *same* argument order, since it reverses both the layer order and the depth order itself. Components without a hook are silently skipped.
+
+You rarely need to call `init` explicitly — only with `skipInit: true`, or to build and initialize a still-pending layer in one line:
+
+```ts
+const services = await init(createServices(config)); // skipInit: true case
+
+const disposeAll = () => dispose(services, modules);
+```
+
+Called with a single (possibly still-pending) layer, `init` awaits it, runs its hooks, and returns the resolved layer.
 
 ---
 

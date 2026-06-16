@@ -33,7 +33,7 @@
 		"CHANGELOG.md"
 	],
 	"scripts": {
-		"build": "tsc",
+		"build": "tsup",
 		"prepublishOnly": "bun run build",
 		"release": "npm publish --access public",
 		"pub-check": "bun run scripts/pub-check.ts",
@@ -41,6 +41,7 @@
 	},
 	"devDependencies": {
 		"@types/node": "^25.3.1",
+		"tsup": "^8.5.1",
 		"typescript": "^5.0.0"
 	}
 }

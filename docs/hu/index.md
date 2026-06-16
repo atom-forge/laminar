@@ -10,11 +10,11 @@ A lényege, hogy a rétegek **lazy módon** szerelődnek össze **factory-k** á
 
 ### Réteg (Layer)
 
-Egy réteg egy objektumstruktúra, ami önálló elemekből (modulok, service-ek, stb.) áll. A Laminar-ban egy réteget factory függvények egy csoportja határoz meg. Ezek a factory-k felelősek a réteg egyes elemeinek létrehozásáért.
+Egy réteg egy objektumstruktúra, ami önálló komponensekből (modulok, service-ek, stb.) áll. A Laminar-ban egy réteget factory függvények egy csoportja határoz meg. Ezek a factory-k felelősek a réteg egyes komponenseinek létrehozásáért.
 
 ### Factory
 
-Egy factory egy egyszerű függvény, amely a réteg egy elemét hozza létre. Paraméterként megkaphatja más rétegek elemeit, vagy akár a saját rétegén belüli más elemeket is (self-referencia). A factory-k által visszaadott objektumok együttesen alkotják a teljes réteget. Egy factory visszaadhatja az értékét közvetlenül vagy `Promise`-ként is — a self-referencián keresztül a többi factory mindig a már feloldott értéket látja.
+Egy factory egy egyszerű függvény, amely a réteg egy komponensét hozza létre. Paraméterként megkaphatja más rétegek komponenseit, vagy akár a saját rétegén belüli más komponenseket is (self-referencia). A factory-k által visszaadott objektumok együttesen alkotják a teljes réteget. Egy factory visszaadhatja az értékét közvetlenül vagy `Promise`-ként is — a self-referencián keresztül a többi factory mindig a már feloldott értéket látja.
 
 ### `internal`
 
@@ -55,9 +55,9 @@ Egy réteg típusa. Tuple formában tartalmazza a réteg két eszközét:
 
 Utility type: egy `Layer<...>` típusból kivonja a tuple formát `[OuterArgs, SelfT, FactoryArgs]`. Főleg `makeLayer<FromLayer<MyLayer>>(...)` formában használatos.
 
-### `makeLayer<L>(resolver)`
+### `makeLayer<L>(resolver, options?)`
 
-nEgy réteg létrehozója. Visszaad egy `[define, create]` tuple-t. A `create(...)` által visszaadott függvény async — mindig `Promise<SelfT>`-t ad vissza, függetlenül attól, hogy a factory-k szinkronok vagy aszinkronok, ezért a hívás helyén `await`-elni kell.
+Egy réteg létrehozója. Visszaad egy `[define, create]` tuple-t. A `create(...)` által visszaadott függvény async — mindig `Promise<SelfT>`-t ad vissza, függetlenül attól, hogy a factory-k szinkronok vagy aszinkronok, ezért a hívás helyén `await`-elni kell.
 
 ```ts
 const myLayer = makeLayer<FromLayer<MyLayerType>>(
@@ -66,6 +66,45 @@ const myLayer = makeLayer<FromLayer<MyLayerType>>(
 ```
 
 A `resolver` feladata: az `outerArgs` (a creator kapott argumentumai) és a `self` (az éppen épülő konténer) alapján összerakja a factory argumentum tuple-t.
+
+Az opcionális `options.skipInit: boolean` kikapcsolja az automatikus `init`-et (lásd lent) — alapból `false`.
+
+### `onInit(fn)` / `onDispose(fn)`
+
+Lifecycle hookokat deklarálnak egy komponensen — a factory return objektumába spreadelve kell használni, nincs extra wrapper, nincs factory argumentum változás.
+
+```ts
+export const prismaService = defineService((config, services) => {
+  const pool = new Pool(config.database);
+  return {
+    db: new PrismaClient({ adapter: new PrismaPg(pool) }),
+    ...onDispose(() => pool.end()),
+    ...onInit(() => pool.query('SELECT 1')),
+  };
+});
+```
+
+A `create(...)` alapból automatikusan lefuttatja az `onInit` hookokat a frissen felépített rétegen — nincs szükség külön `init()` hívásra:
+
+```ts
+const services = await createServices(config); // már inicializálva van
+```
+
+Ha ezt nem szeretnéd (pl. teszthez, vagy ha az inicializálást később, kontrolláltan akarod elindítani), add meg `{ skipInit: true }`-t a `makeLayer`-nek, és hívd az `init()`-et manuálisan, amikor készen állsz rá.
+
+### `init(...layers)` / `dispose(...layers)`
+
+Tetszőleges számú réteget fogadnak el, és rekurzívan bejárják az összes komponensüket, lefuttatva az `onInit`/`onDispose` hookjaikat. `init` build sorrendben fut a kapott réteglistán és réteges mélységben is; `dispose` ugyanazzal az argumentumsorrenddel hívható, mert ő maga fordítva (rétegenként és mélységben is) takarít el. Csendben átugorja azokat a komponenseket, ahol nincs hook.
+
+`init` legtöbbször nem kell explicit módon — csak `skipInit: true` mellett, vagy ha egy `Promise`-ot adó layer-creatort egy sorban akarsz felépíteni és inicializálni is:
+
+```ts
+const services = await init(createServices(config)); // skipInit: true eset
+
+const disposeAll = () => dispose(services, modules);
+```
+
+Egyetlen (akár még `Promise`-ként pending) layerrel hívva az `init` megvárja, lefuttatja a hookokat, és visszaadja a feloldott layert.
 
 ---
 
