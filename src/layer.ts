@@ -1,15 +1,14 @@
 import { COMPONENT } from './symbols.js';
-import { init } from './lifecycle.js';
 
 type AnyRecord = Record<string, unknown>;
 
-async function assemble<T extends AnyRecord>(
-	defs: { [K in keyof T]: (...args: any[]) => T[K] | Promise<T[K]> },
+function assemble<T extends AnyRecord>(
+	defs: { [K in keyof T]: (...args: any[]) => T[K] },
 	getArgs: (self: T) => unknown[],
-): Promise<T> {
+): T {
 	const items = {} as T;
 	for (const key of Object.keys(defs) as Array<keyof T>) {
-		const value = await defs[key](...getArgs(items));
+		const value = defs[key](...getArgs(items));
 		if (value && typeof value === 'object') (value as any)[COMPONENT] = true;
 		items[key] = value;
 	}
@@ -29,7 +28,7 @@ async function assemble<T extends AnyRecord>(
 // Adding a new layer is just a 3-line wrapper — see the pre-built helpers below.
 
 type LayerDefs<FactoryArgs extends unknown[], SelfT extends AnyRecord> = {
-	[K in keyof SelfT]: (...args: FactoryArgs) => SelfT[K] | Promise<SelfT[K]>;
+	[K in keyof SelfT]: (...args: FactoryArgs) => SelfT[K];
 };
 
 export type Layer<
@@ -37,38 +36,34 @@ export type Layer<
 	SelfT extends AnyRecord = AnyRecord,
 	FactoryArgs extends unknown[] = unknown[],
 > = [
-	<T>(factory: (...args: FactoryArgs) => T | Promise<T>) => (...args: FactoryArgs) => T | Promise<T>,
-	(defs: LayerDefs<FactoryArgs, SelfT>) => (...outerArgs: OuterArgs) => Promise<SelfT>,
+	<T>(factory: (...args: FactoryArgs) => T) => (...args: FactoryArgs) => T,
+	(defs: LayerDefs<FactoryArgs, SelfT>) => (...outerArgs: OuterArgs) => SelfT,
 ];
 
 /** Extracts the tuple form [OuterArgs, SelfT, FactoryArgs] from a LayerShape type. */
 export type FromLayer<T extends Layer<any, any, any>> =
 	T extends Layer<infer O, infer S, infer F> ? [O, S, F] : never;
 
-export type LayerOptions = {
-	/** Skip the automatic init() run after assembly — call init(layer) manually when ready. */
-	skipInit?: boolean;
-};
+/** Resolves the actual unit type a factory produces. */
+export type Unit<T extends (...args: any[]) => any> = ReturnType<T>;
 
 // Overload: tuple form [OuterArgs, SelfT, FactoryArgs]
 export function makeLayer<
 	L extends [unknown[], AnyRecord, unknown[]],
->(resolver: (outerArgs: L[0], self: L[1]) => L[2], options?: LayerOptions): Layer<L[0], L[1], L[2]>;
+>(resolver: (outerArgs: L[0], self: L[1]) => L[2]): Layer<L[0], L[1], L[2]>;
 
 // Overload: traditional 3 separate type params
 export function makeLayer<
 	OuterArgs extends unknown[],
 	SelfT extends AnyRecord,
 	FactoryArgs extends unknown[],
->(resolver: (outerArgs: OuterArgs, self: SelfT) => FactoryArgs, options?: LayerOptions): Layer<OuterArgs, SelfT, FactoryArgs>;
+>(resolver: (outerArgs: OuterArgs, self: SelfT) => FactoryArgs): Layer<OuterArgs, SelfT, FactoryArgs>;
 
 // Implementation
-export function makeLayer(resolver: any, options: LayerOptions = {}): any {
+export function makeLayer(resolver: any): any {
 	const define = <T>(factory: (...args: any[]) => T) => factory;
-	const create = (defs: any) => async (...outerArgs: any[]): Promise<any> => {
-		const layer = await assemble(defs, (self) => resolver(outerArgs, self));
-		if (!options.skipInit) await init(layer);
-		return layer;
+	const create = (defs: any) => (...outerArgs: any[]): any => {
+		return assemble(defs, (self) => resolver(outerArgs, self));
 	};
 
 	return [define, create];

@@ -14,7 +14,7 @@ bun add @atom-forge/laminar
 ## Exports
 
 ```typescript
-import { internal, PublicLayer, Layer, FromLayer, makeLayer, onInit, onDispose, init, dispose } from '@atom-forge/laminar';
+import { internal, PublicLayer, Layer, FromLayer, Unit, makeLayer, onInit, onDispose, init, dispose } from '@atom-forge/laminar';
 ```
 
 ---
@@ -36,10 +36,13 @@ The type definition of a layer where:
 ### `FromLayer<T>`
 Helper type to extract the `[OuterArgs, SelfT, FactoryArgs]` tuple from a `Layer` type. Often used to provide types to `makeLayer<FromLayer<MyLayer>>(resolver)`.
 
-### `makeLayer(resolver, options?: { skipInit?: boolean })`
+### `Unit<T>`
+Helper type to extract the return type of a factory function: `ReturnType<T>`. Prevents boilerplate and reads nicely: `type Services = { db: Unit<typeof db> }`.
+
+### `makeLayer(resolver)`
 Returns a `[define, create]` tuple where:
-- `define`: Type-safe factory definition helper: `const factory = define((...factoryArgs) => ({ ... }))`. Factories may return their value directly or as a `Promise`.
-- `create`: Factory assembler: `const createContainer = create({ factoryA, factoryB })`. The resulting `createContainer(...)` function is always async — it returns `Promise<SelfT>` and must be `await`ed, regardless of whether the factories themselves are sync or async. **By default it also runs `init()` on the assembled layer before returning it** — pass `options.skipInit: true` to `makeLayer` to opt out and call `init()` manually instead.
+- `define`: Type-safe factory definition helper: `const factory = define((...factoryArgs) => ({ ... }))`. Factories must return their value directly (synchronously).
+- `create`: Factory assembler: `const createContainer = create({ factoryA, factoryB })`. The resulting `createContainer(...)` function is synchronous — it returns `SelfT` immediately, as all factories run synchronously.
 - `resolver`: Mapping function `(outerArgs: OuterArgs, self: SelfT) => FactoryArgs`.
 
 ### `onInit(fn: () => void | Promise<void>)` / `onDispose(fn: () => void | Promise<void>)`
@@ -47,19 +50,22 @@ Declares a lifecycle hook on a component. Spread the result into the factory's r
 ```typescript
 return { db, ...onDispose(() => pool.end()), ...onInit(() => pool.query('SELECT 1')) };
 ```
-With the default (non-`skipInit`) `makeLayer` setup, `onInit` hooks run automatically as part of `create(...)` — no explicit `init()` call needed in normal usage.
+Since assembly is synchronous, creator functions like `createServices` do not run `onInit` hooks automatically. You must run them using the async `init()` utility after assembling the layer.
 
-### `init(...layers): Promise<...>` / `dispose(...layers: object[]): Promise<void>`
-Recursively walk every component in each given layer (every object returned by a factory is internally branded so these utilities only traverse actual components, not arbitrary nested data), invoking their `onInit`/`onDispose` hooks. Mostly relevant for layers created with `skipInit: true`, or for cleanup at shutdown.
-- `init` has two overloads:
-  - `init<T extends object>(layer: T | Promise<T>): Promise<T>` — single layer, possibly still-pending. Awaits it, runs its hooks, and returns the resolved layer: `const services = await init(createServices(config));` (used when that layer was built with `skipInit: true`).
-  - `init(...layers: object[]): Promise<void>` — multiple already-built layers, processed in the order passed.
-- `dispose(...layers: object[]): Promise<void>` reverses both the layer order and the depth order internally, so it can be called with the *same* argument order as a multi-layer `init` call:
+### `init(layer): Promise<void>` / `dispose(layer: object): Promise<void>`
+Recursively walk every component in the given layer (every object returned by a factory is internally branded so these utilities only traverse actual components, not arbitrary nested data), invoking their `onInit`/`onDispose` hooks.
+- `init(layer)` runs hooks in build order (depth-first).
+- `dispose(layer)` runs hooks in reverse build order.
 ```typescript
-const services = await createServices(config); // auto-initialized
-const modules = await createModules(config, services); // auto-initialized
+const services = createServices(config); // synchronous assembly
+const modules = createModules(config, services); // synchronous assembly
+
+await init(services);
+await init(modules);
+
 // later, at shutdown:
-await dispose(services, modules);
+await dispose(modules);
+await dispose(services);
 ```
 
 ---
@@ -119,8 +125,8 @@ export const email = defineService((config, services) => {
 });
 
 export type Services = {
-  database: ReturnType<typeof database>;
-  email: ReturnType<typeof email>;
+  database: Unit<typeof database>;
+  email: Unit<typeof email>;
 };
 
 export const createServices = serviceCreatorFactory({ database, email });
@@ -141,7 +147,7 @@ export const auth = defineModule((config, services, modules) => {
 });
 
 export type Modules = {
-  auth: ReturnType<typeof auth>;
+  auth: Unit<typeof auth>;
 };
 
 export const createModules = moduleCreatorFactory({ auth });
@@ -152,12 +158,16 @@ export const createModules = moduleCreatorFactory({ auth });
 ```typescript
 import { createServices } from './services';
 import { createModules } from './modules';
+import { init } from '@atom-forge/laminar';
 
 const config = { smtp: "smtp.example.com" };
 
 // Boot the application
-const services = await createServices(config);
-const modules = await createModules(config, services);
+const services = createServices(config); // synchronous assembly
+const modules = createModules(config, services); // synchronous assembly
+
+await init(services);
+await init(modules);
 
 await modules.auth.login("user@example.com");
 ```

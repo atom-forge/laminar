@@ -14,7 +14,7 @@ A layer is an object structure containing individual components (modules, servic
 
 ### Factory
 
-A factory is a simple function that creates one component of the layer. It can receive components from other layers, or even other components from its own layer (self-reference). The objects returned by the factories collectively form the completed layer. A factory may return its value directly or as a `Promise`; either way, the resolved value is what other factories see through self-reference.
+A factory is a simple function that creates one component of the layer. It can receive components from other layers, or even other components from its own layer (self-reference). The objects returned by the factories collectively form the completed layer. A factory returns its value directly (synchronously).
 
 ### `internal`
 
@@ -55,9 +55,13 @@ The type definition of a layer. It contains two tools in a tuple:
 
 Utility type: extracts the tuple format `[OuterArgs, SelfT, FactoryArgs]` from a `Layer<...>` type. Primarily used in the form `makeLayer<FromLayer<MyLayer>>(...)`.
 
-### `makeLayer<L>(resolver, options?)`
+### `Unit<T>`
 
-Creates a layer. Returns a `[define, create]` tuple. The `create(...)` function it produces is async — it always returns `Promise<SelfT>`, regardless of whether the underlying factories are sync or async, so call sites must `await` it.
+Utility type: extracts the return type of a factory function (`ReturnType<T>`). Useful for defining the container types cleanly: `type Services = { myService: Unit<typeof myService> }`.
+
+### `makeLayer<L>(resolver)`
+
+Creates a layer. Returns a `[define, create]` tuple. The `create(...)` function it produces is synchronous — it returns `SelfT` immediately, as all factories run synchronously.
 
 ```ts
 const myLayer = makeLayer<FromLayer<MyLayerType>>(
@@ -66,8 +70,6 @@ const myLayer = makeLayer<FromLayer<MyLayerType>>(
 ```
 
 The role of the `resolver` is to assemble the factory arguments tuple based on `outerArgs` (arguments passed to the creator) and `self` (the container currently being assembled).
-
-The optional `options.skipInit: boolean` disables the automatic `init` run (see below) — defaults to `false`.
 
 ### `onInit(fn)` / `onDispose(fn)`
 
@@ -84,27 +86,19 @@ export const prismaService = defineService((config, services) => {
 });
 ```
 
-`create(...)` automatically runs `onInit` hooks on the freshly built layer by default — no separate `init()` call needed:
+Since the assembly is fully synchronous, creator functions like `createServices` do not run `onInit` hooks automatically. You must run them using the async `init()` utility after assembling the layer.
+
+### `init(layer)` / `dispose(layer)`
+
+Accepts a layer and recursively walks every component inside it, running its `onInit`/`onDispose` hooks. Both are async and await the hooks. Components without a hook are silently skipped.
 
 ```ts
-const services = await createServices(config); // already initialized
+const services = createServices(config); // synchronous assembly
+await init(services); // async initialization
+
+// Shutdown
+await dispose(services); // async cleanup
 ```
-
-If you don't want that (e.g. in tests, or when you want to control when initialization happens), pass `{ skipInit: true }` to `makeLayer` and call `init()` manually when ready.
-
-### `init(...layers)` / `dispose(...layers)`
-
-Accept any number of layers and recursively walk every component in each, running its `onInit`/`onDispose` hooks. `init` runs the given layers in build order (and depth-first within each); `dispose` can be called with the *same* argument order, since it reverses both the layer order and the depth order itself. Components without a hook are silently skipped.
-
-You rarely need to call `init` explicitly — only with `skipInit: true`, or to build and initialize a still-pending layer in one line:
-
-```ts
-const services = await init(createServices(config)); // skipInit: true case
-
-const disposeAll = () => dispose(services, modules);
-```
-
-Called with a single (possibly still-pending) layer, `init` awaits it, runs its hooks, and returns the resolved layer.
 
 ---
 
@@ -154,14 +148,15 @@ Use `serviceCreatorFactory` to assemble the full layer container from the factor
 
 ```ts
 // services/index.ts
+import { type Unit } from '@atom-forge/laminar';
 import { serviceCreatorFactory } from './layers';
 import { myService } from './my-service';
 import { otherService } from './other-service';
 
 // The type of the full layer
 export type Services = {
-  myService: ReturnType<typeof myService>;
-  otherService: ReturnType<typeof otherService>;
+  myService: Unit<typeof myService>;
+  otherService: Unit<typeof otherService>;
 };
 
 // The creator function that will expect the Config
@@ -173,14 +168,16 @@ export const createServices = serviceCreatorFactory({
 
 ### 4. Initialization
 
-Finally, when the application starts, initialize your layer using the `createServices` function:
+Finally, when the application starts, initialize your layer by calling the creator function and executing `init`:
 
 ```ts
 // main.ts
 import { createServices } from './services';
 import { config } from './config';
+import { init } from '@atom-forge/laminar';
 
-const services = await createServices(config);
+const services = createServices(config); // synchronous assembly
+await init(services); // async initialization
 services.myService.doSomething();
 ```
 
@@ -283,13 +280,14 @@ Collect all services in a single file and use `serviceCreatorFactory` to create 
 
 ```ts
 // services/index.ts
+import { type Unit } from '@atom-forge/laminar';
 import { serviceCreatorFactory } from './layers';
 import { emailService } from './email';
 
 // The type of the full Services layer containing both public and internal interfaces.
 // This type is used by Laminar for self-referential resolution.
 export type Services = {
-  email: ReturnType<typeof emailService>;
+  email: Unit<typeof emailService>;
 };
 
 // Create the builder function
@@ -298,4 +296,4 @@ export const createServices = serviceCreatorFactory({
 });
 ```
 
-When the application starts, calling `await createServices(config)` lazily executes the factories to construct the `Services` container.
+When the application starts, calling `createServices(config)` lazily executes the factories to construct the `Services` container. You then initialize the layer using `await init(services)`.

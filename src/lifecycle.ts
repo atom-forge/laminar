@@ -20,32 +20,18 @@ function walk(obj: object): unknown[] {
 	return result;
 }
 
-/** Runs onDispose hooks of every component across the given layers, reverse of build order. */
-export async function dispose(...layers: object[]): Promise<void> {
-	for (const layer of layers.reverse()) {
-		for (const value of walk(layer).reverse()) {
-			if (typeof (value as any)[DISPOSE] === 'function') {
-				await (value as any)[DISPOSE]();
-			}
+export async function init(layer: object): Promise<void> {
+	for (const value of walk(layer)) {
+		if (typeof (value as any)[INIT] === 'function') {
+			await (value as any)[INIT]();
 		}
 	}
 }
 
-// Overload: single (possibly still-pending) layer — resolves and returns it, e.g.
-// `const services = await init(createServices(config));`
-export async function init<T extends object>(layer: T | Promise<T>): Promise<T>;
-// Overload: multiple already-built layers, run in build order.
-export async function init(...layers: object[]): Promise<void>;
-
-/** Runs onInit hooks of every component across the given layers, in build order. */
-export async function init(...layers: (object | Promise<object>)[]): Promise<any> {
-	const resolved = await Promise.all(layers);
-	for (const layer of resolved) {
-		for (const value of walk(layer)) {
-			if (typeof (value as any)[INIT] === 'function') {
-				await (value as any)[INIT]();
-			}
+export async function dispose(layer: object): Promise<void> {
+	for (const value of walk(layer).reverse()) {
+		if (typeof (value as any)[DISPOSE] === 'function') {
+			await (value as any)[DISPOSE]();
 		}
 	}
-	return resolved.length === 1 ? resolved[0] : undefined;
 }
