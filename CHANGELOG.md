@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.0] - 2026-06-16
+
+### Added
+- `Unit<T>` utility type: `ReturnType<T>` for a factory function, helping to keep container type definitions clean (e.g. `type Services = { db: Unit<typeof db> }`).
+
+### Changed
+- **Breaking:** Rolled back async factory support. `assemble` and all layer creators (like `createApp` / `createServices`) are now synchronous. Factories must return their values synchronously, and creators return the assembled container directly rather than a `Promise`.
+- **Breaking:** Updated lifecycle hooks to run asynchronously outside of assembly. `makeLayer` no longer automatically runs `onInit` hooks. You must call `await init(layer)` and `await dispose(layer)` explicitly.
+- **Breaking:** `init` and `dispose` now accept a single layer object instead of multiple layers.
+
+---
+
 ## [0.3.0] - 2026-06-16
 
 ### Added
