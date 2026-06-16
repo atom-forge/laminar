@@ -64,4 +64,29 @@ describe("Laminar Sync Assembly + Async Lifecycle", () => {
 		await dispose(services);
 		expect(disposeSeq).toEqual(["cache", "db"]);
 	});
+
+	test("should run the optional assemble hook synchronously with correct arguments", () => {
+		let assembleCalledWith: any[] = [];
+
+		const servicesLayer: Layer<[Config], Services, [Config, Services]> = makeLayer(
+			([config], self) => [config, self]
+		);
+
+		const [defineService, serviceCreatorFactory] = servicesLayer;
+
+		const dbService = defineService(() => ({ query: (sql: string) => `result` }));
+		const cacheService = defineService(() => ({ get: (key: string) => `value` }));
+
+		const createServices = serviceCreatorFactory({
+			db: dbService,
+			cache: cacheService,
+		}, {
+			assemble: (self, config, services) => {
+				assembleCalledWith = [self, config, services];
+			}
+		});
+
+		const services = createServices({ database: "localhost" });
+		expect(assembleCalledWith).toEqual([services, { database: "localhost" }, services]);
+	});
 });

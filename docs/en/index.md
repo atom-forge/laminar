@@ -71,6 +71,16 @@ const myLayer = makeLayer<FromLayer<MyLayerType>>(
 
 The role of the `resolver` is to assemble the factory arguments tuple based on `outerArgs` (arguments passed to the creator) and `self` (the container currently being assembled).
 
+The creator function returned by `makeLayer` (the second element of the tuple) accepts an optional `options` object as a second argument:
+```ts
+const createContainer = create(defs, {
+  assemble: (self, ...factoryArgs) => {
+    // Runs synchronously immediately after assembly
+  }
+});
+```
+This is useful for running imperative setup/binding logic (e.g. registering routes or middleware on the container) immediately after it is assembled, without needing a separate custom wrapper function.
+
 ### `onInit(fn)` / `onDispose(fn)`
 
 Declares lifecycle hooks on a component — spread the result into the factory's return object. No extra wrapper, no change to the factory signature.

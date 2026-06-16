@@ -37,7 +37,12 @@ export type Layer<
 	FactoryArgs extends unknown[] = unknown[],
 > = [
 	<T>(factory: (...args: FactoryArgs) => T) => (...args: FactoryArgs) => T,
-	(defs: LayerDefs<FactoryArgs, SelfT>) => (...outerArgs: OuterArgs) => SelfT,
+	(
+		defs: LayerDefs<FactoryArgs, SelfT>,
+		options?: {
+			assemble?: (self: SelfT, ...args: FactoryArgs) => void;
+		}
+	) => (...outerArgs: OuterArgs) => SelfT,
 ];
 
 /** Extracts the tuple form [OuterArgs, SelfT, FactoryArgs] from a LayerShape type. */
@@ -62,8 +67,13 @@ export function makeLayer<
 // Implementation
 export function makeLayer(resolver: any): any {
 	const define = <T>(factory: (...args: any[]) => T) => factory;
-	const create = (defs: any) => (...outerArgs: any[]): any => {
-		return assemble(defs, (self) => resolver(outerArgs, self));
+	const create = (defs: any, options?: { assemble?: (self: any, ...args: any[]) => void }) => (...outerArgs: any[]): any => {
+		const layer = assemble(defs, (self) => resolver(outerArgs, self));
+		if (options?.assemble) {
+			const factoryArgs = resolver(outerArgs, layer);
+			options.assemble(layer, ...factoryArgs);
+		}
+		return layer;
 	};
 
 	return [define, create];

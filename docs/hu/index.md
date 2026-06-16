@@ -71,6 +71,16 @@ const myLayer = makeLayer<FromLayer<MyLayerType>>(
 
 A `resolver` feladata: az `outerArgs` (a creator kapott argumentumai) és a `self` (az éppen épülő konténer) alapján összerakja a factory argumentum tuple-t.
 
+A `makeLayer` által visszaadott creator függvény (a tuple második eleme) elfogad egy opcionális `options` objektumot második paraméterként:
+```ts
+const createContainer = create(defs, {
+  assemble: (self, ...factoryArgs) => {
+    // Közvetlenül az összeszerelés után fut le szinkronban
+  }
+});
+```
+Ez nagyon hasznos olyan imperatív beállítások (például router/middleware regisztráció vagy eseménykezelők bekötése) végrehajtására közvetlenül az összeszerelés után, amikhez egyébként egy egyedi wrapper függvényt kellene írnunk.
+
 ### `onInit(fn)` / `onDispose(fn)`
 
 Lifecycle hookokat deklarálnak egy uniton — a factory return objektumába spreadelve kell használva, nincs extra wrapper, nincs factory argumentum változás.

@@ -42,7 +42,8 @@ Helper type to extract the return type of a factory function: `ReturnType<T>`. P
 ### `makeLayer(resolver)`
 Returns a `[define, create]` tuple where:
 - `define`: Type-safe factory definition helper: `const factory = define((...factoryArgs) => ({ ... }))`. Factories must return their value directly (synchronously).
-- `create`: Factory assembler: `const createContainer = create({ factoryA, factoryB })`. The resulting `createContainer(...)` function is synchronous — it returns `SelfT` immediately, as all factories run synchronously.
+- `create`: Factory assembler: `const createContainer = create({ factoryA, factoryB }, options?)`. The resulting `createContainer(...)` function is synchronous — it returns `SelfT` immediately, as all factories run synchronously.
+  - `options.assemble?: (self: SelfT, ...args: FactoryArgs) => void`: Optional synchronous callback running immediately after the layer has been fully assembled. Useful for imperative setup (middleware registration, etc.) without wrapper functions.
 - `resolver`: Mapping function `(outerArgs: OuterArgs, self: SelfT) => FactoryArgs`.
 
 ### `onInit(fn: () => void | Promise<void>)` / `onDispose(fn: () => void | Promise<void>)`
