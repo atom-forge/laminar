@@ -2,7 +2,7 @@
 
 Laminar egy könnyűsúlyú, típusbiztos rétegkezelő rendszer TypeScript-hez. Lehetővé teszi, hogy az alkalmazás logikáját egymásra épülő, jól elkülönített rétegekbe szervezzük.
 
-A lényege, hogy a rétegek **lazy módon** szerelődnek össze **factory-k** által.
+A rétegek **szinkron módon**, **factory-k** segítségével szerelődnek össze, az `Object.keys(defs)` sorrendjében. A factory-k az éppen épülő közös konténert kapják meg. A később létrejövő komponenseket csak az összeszerelés után, metódusokban vagy lifecycle hookokban érjük el, ne a factory futása közben. Körkörös hivatkozások csak késleltetett hozzáféréssel biztonságosak; egy még nem létező komponens destrukturálása `undefined` értéket rögzít.
 
 ---
 
@@ -15,6 +15,8 @@ Egy réteg egy objektumstruktúra, ami önálló komponensekből (modulok, servi
 ### Factory
 
 Egy factory egy egyszerű függvény, amely a réteg egy unitját hozza létre. Paraméterként megkaphatja más rétegek unitjait, vagy akár a saját rétegén belüli más unitokat is (self-referencia). A factory-k által visszaadott objektumok együttesen alkotják a teljes réteget. Egy factory az értékét közvetlenül (szinkron módon) adja vissza.
+
+Nincs függőségi gráf vagy automatikus sorrendezés. A beszúrási sorrend megtartásához használjunk nem numerikus factory-neveket. Minden creator-hívás újra lefuttatja az összes factory-t és új konténert épít; nincs globális singleton-regiszter. A késleltetett körkörös hivatkozások nem akadályozzák meg a körkörös metódushívások végtelen rekurzióját.
 
 ### `internal`
 
@@ -31,7 +33,9 @@ return {
 
 ### `PublicLayer<T>`
 
-Rekurzívan leveszi az `internal(...)` jelöléssel ellátott mezőket egy típusból. A szomszédos rétegek csak a `PublicLayer<T>` felületet látják.
+Rekurzívan leveszi az `internal(...)` jelöléssel ellátott mezőket egy típusból. A szomszédos rétegek akkor látják ezt a szűkített felületet, ha a factory argumentumaikat `PublicLayer<T>` típussal definiáljuk. A függvények szignatúrái változatlanok maradnak.
+
+Ez fordításidejű láthatóság, nem futásidejű szűrés vagy biztonsági határ: az `internal(value)` változatlanul adja vissza az értéket, a belső mezők futásidőben az objektumon maradnak.
 
 ---
 
@@ -61,7 +65,7 @@ Utility type: kinyeri egy factory függvény visszatérési típusát (`ReturnTy
 
 ### `makeLayer<L>(resolver)`
 
-Egy réteg létrehozója. Visszaad egy `[define, create]` tuple-t. A `create(...)` által visszaadott függvény szinkron — mindig `SelfT`-t ad vissza közvetlenül, mivel a factory-k mind szinkronban futnak le.
+Egy réteg létrehozója. Visszaad egy `[define, create]` tuple-t. A `create(defs, options?)` egy creator függvényt ad vissza; ezt az `OuterArgs` argumentumokkal meghívva szinkron módon felépül és visszatér a `SelfT` konténer. A factory-knak és az `assemble` callbacknek szinkronnak kell lenniük; az aszinkron indítás helye az `onInit`.
 
 ```ts
 const myLayer = makeLayer<FromLayer<MyLayerType>>(
@@ -71,7 +75,7 @@ const myLayer = makeLayer<FromLayer<MyLayerType>>(
 
 A `resolver` feladata: az `outerArgs` (a creator kapott argumentumai) és a `self` (az éppen épülő konténer) alapján összerakja a factory argumentum tuple-t.
 
-A `makeLayer` által visszaadott creator függvény (a tuple második eleme) elfogad egy opcionális `options` objektumot második paraméterként:
+A `makeLayer` által visszaadott `create` segédfüggvény (a tuple második eleme) a factory-definíciók mellett elfogad egy opcionális `options` objektumot második paraméterként:
 ```ts
 const createContainer = create(defs, {
   assemble: (self, ...factoryArgs) => {
@@ -91,7 +95,7 @@ export const prismaService = defineService((config, services) => {
   return {
     db: new PrismaClient({ adapter: new PrismaPg(pool) }),
     ...onDispose(() => pool.end()),
-    ...onInit(() => pool.query('SELECT 1')),
+    ...onInit(async () => { await pool.query('SELECT 1'); }),
   };
 });
 ```
@@ -100,7 +104,14 @@ Mivel a szerelés teljesen szinkronban történik, a `createServices` és hasonl
 
 ### `init(layer)` / `dispose(layer)`
 
-Egy réteget fogad el, és rekurzívan bejárja az összes unitját, lefuttatva az `onInit`/`onDispose` hookokat. Mindkettő aszinkron és megvárja a hookokat. Csendben átugorja azokat a unitokat, ahol nincs hook.
+Egy réteget fogad el, és rekurzívan bejárja a factory-k által visszaadott, komponensként megjelölt objektumokat, lefuttatva az `onInit`/`onDispose` hookokat. Tetszőleges beágyazott adatokat nem jár be. Mindkét függvény egyesével várja meg a hookokat; a hook nélküli komponenseket átugorja.
+
+- Az `init` mélységi bejárást használ, a szülőt a gyerek előtt érinti; a `dispose` ennek fordított sorrendjében fut. Lapos rétegnél ez a factory-k definíciós sorrendje, illetve annak fordítottja.
+- Hiba esetén az aktuális hívás megáll. Nincs automatikus visszagörgetés vagy a maradék komponensek takarítása.
+- Ismételt híváskor a hookok újra lefutnak; az idempotenciáról az alkalmazásnak kell gondoskodnia.
+- A bejárás nem érzékeli a ciklusokat és nem szűri ki a többször elért komponenseket. A komponenshivatkozásokat ciklikus, felsorolható mezők helyett closure-ben tároljuk; megosztott komponensek hookjai többször is lefuthatnak.
+- Egy objektum hooktípusonként egy hookot tárol: több `onInit` vagy `onDispose` eredmény spreadelése felülírja az azonos típusú korábbi hookot.
+- Előbb az alsó, majd a felső rétegeket inicializáljuk, és fordított sorrendben takarítsunk; a closure-ben tárolt függőségeket a rendszer nem deríti fel automatikusan.
 
 ```ts
 const services = createServices(config); // szinkron összeszerelés
@@ -122,7 +133,7 @@ Például egy `Services` réteg, ami a `Config` rétegre épül:
 
 ```ts
 // layers.ts
-import { type FromLayer, type Layer, makeLayer, PublicLayer } from '@atom-forge/laminar';
+import { type FromLayer, type Layer, makeLayer } from '@atom-forge/laminar';
 import type { Config } from './config';
 import type { Services } from './services';
 
@@ -142,10 +153,10 @@ A `defineService` segítségével típusbiztosan írhatunk egy factory-t a réte
 
 ```ts
 // services/my-service.ts
-import { defineService } from './layers';
+import { defineService } from '../layers';
 
 export const myService = defineService((config, services) => {
-  // 'services' itt a self-referencia, hozzáférhetünk más service-ekhez (lazy)
+  // A későbbi service-eket a közös konténeren keresztül, metódusokban, összeszerelés után érjük el.
   return {
     doSomething: () => { console.log(config.someValue); },
   };
@@ -159,7 +170,7 @@ A `serviceCreatorFactory` segítségével a factory-kból összeállítjuk a tel
 ```ts
 // services/index.ts
 import { type Unit } from '@atom-forge/laminar';
-import { serviceCreatorFactory } from './layers';
+import { serviceCreatorFactory } from '../layers';
 import { myService } from './my-service';
 import { otherService } from './other-service';
 
@@ -201,11 +212,11 @@ Az alábbi példa egy konkrét alkalmazás rétegeit definiálja. A rétegek egy
 
 ```ts
 // layers.ts
-import {type FromLayer, type Layer, makeLayer, PublicLayer} from "@atom-forge/laminar";
+import {type FromLayer, type Layer, makeLayer, type PublicLayer} from "@atom-forge/laminar";
 import type {Services} from "./services";
 import type {Modules} from "./modules";
 import type {Rpc} from "./api";
-import {Config} from "./index";
+import type {Config} from "./config";
 
 // Services layer
 // Creator: (config) => Services
@@ -227,12 +238,12 @@ export const modulesLayer: ModulesLayer = makeLayer<FromLayer<ModulesLayer>>(
 // Creator: (config, modules) => Rpc
 // Factory: (config, modules) => T
 type ApiLayer = Layer<[Config, Modules], Rpc, [Config, PublicLayer<Modules>]>;
-export const apiLayer: ApiLayer = makeLayer<FromLayer<typeof apiLayer>>(
+export const apiLayer: ApiLayer = makeLayer<FromLayer<ApiLayer>>(
 	([config, modules], _self) => [config, modules as PublicLayer<Modules>],
 );
 
 export const [defineService, serviceCreatorFactory] = servicesLayer;
-export const [defineModule, moduleCreatorFactory] = modulesLayer
+export const [defineModule, moduleCreatorFactory] = modulesLayer;
 export const [defineApi, apiCreatorFactory] = apiLayer;
 ```
 
@@ -244,7 +255,7 @@ export const [defineApi, apiCreatorFactory] = apiLayer;
 
 2.  **Modules Layer**:
     *   A `moduleCreatorFactory` egy `Config`-ot és egy `Services` konténert vár (`CreatorArgs: [Config, Services]`).
-    *   Minden modul factory megkapja a `Config`-ot, a `Services` publikus felületét (`PublicLayer<Services>`), és a `Modules` konténert (`FactoryArgs: [Config, PublicLayer<Services>, Modules]`). A `PublicLayer` biztosítja, hogy a modulok ne férjenek hozzá a service-ek belső (`internal`) részeihez.
+    *   Minden modul factory megkapja a `Config`-ot, a `Services` publikus felületét (`PublicLayer<Services>`), és a `Modules` konténert (`FactoryArgs: [Config, PublicLayer<Services>, Modules]`). A `PublicLayer` fordításidőben megakadályozza a service-ek belső (`internal`) részeihez való hozzáférést.
 
 3.  **API Layer**:
     *   Az `apiCreatorFactory` egy `Config`-ot és egy `Modules` konténert vár (`CreatorArgs: [Config, Modules]`).
@@ -260,11 +271,11 @@ Létrehozunk egy egyszerű e-mail küldő service-t. A `defineService` biztosít
 
 ```ts
 // services/email.ts
-import { defineService } from './layers';
+import { defineService } from '../layers';
 import { internal } from '@atom-forge/laminar';
 
 export const emailService = defineService((config, services) => {
-  // Belső segédfüggvény, csak a Services rétegen belül lesz elérhető
+  // Belső segédfüggvény, fordításidőben kimarad a PublicLayer<Services> felületből
   async function connectToSmtp() {
     console.log(`Connecting to ${config.smtpHost}...`);
     // ...
@@ -291,7 +302,7 @@ Miután minden service-t megírtunk, egyetlen fájlban összegyűjtjük őket, �
 ```ts
 // services/index.ts
 import { type Unit } from '@atom-forge/laminar';
-import { serviceCreatorFactory } from './layers';
+import { serviceCreatorFactory } from '../layers';
 import { emailService } from './email';
 
 // A teljes Services réteg publikus és belső (internal) felülete egyben.
@@ -306,4 +317,106 @@ export const createServices = serviceCreatorFactory({
 });
 ```
 
-Amikor az alkalmazás elindul, a `createServices(config)` hívás lazy módon, a factory-k lefuttatásával felépíti a `Services` konténert szinkron módon. Ezt követően az `await init(services)` hívással inicializáljuk a réteget. Ezt a konténert (pontosabban annak `PublicLayer` változatát) adjuk majd tovább a `Modules` réteg factory-jának.
+Amikor az alkalmazás elindul, a `createServices(config)` hívás azonnal, definíciós sorrendben lefuttatja a factory-kat, és szinkron módon felépít egy új `Services` konténert. Ezt követően az `await init(services)` hívással inicializáljuk a réteget. Ezt a konténert (pontosabban annak `PublicLayer` változatát) adjuk majd tovább a `Modules` réteg factory-jának.
+
+---
+
+## Teljes, típusos példa
+
+### 1. A rétegek definiálása (`layers.ts`)
+
+```typescript
+import { type FromLayer, type Layer, makeLayer, type PublicLayer } from '@atom-forge/laminar';
+import type { Services } from './services';
+import type { Modules } from './modules';
+
+export type Config = { smtp: string };
+
+// 1. Services Layer (Creator: (config) => Services; Factory: (config, services) => Service)
+
+type ServicesLayer = Layer<[Config], Services, [Config, Services]>;
+export const servicesLayer: ServicesLayer = makeLayer<FromLayer<ServicesLayer>>(
+  ([config], self) => [config, self]
+);
+export const [defineService, serviceCreatorFactory] = servicesLayer;
+
+// 2. Modules Layer (Creator: (config, services) => Modules; Factory: (config, services, modules) => Module)
+
+type ModulesLayer = Layer<[Config, Services], Modules, [Config, PublicLayer<Services>, Modules]>;
+export const modulesLayer: ModulesLayer = makeLayer<FromLayer<ModulesLayer>>(
+  ([config, services], self) => [config, services as PublicLayer<Services>, self]
+);
+export const [defineModule, moduleCreatorFactory] = modulesLayer;
+```
+
+### 2. A service-ek megvalósítása (`services.ts`)
+
+```typescript
+import { internal, type Unit } from '@atom-forge/laminar';
+import { defineService, serviceCreatorFactory } from './layers';
+
+export const database = defineService((config, services) => {
+  const pool = {}; // setup db pool
+  return {
+    query: async (sql: string) => { /* query */ },
+    pool: internal(pool), // hide database pool from Modules layer
+  };
+});
+
+export const email = defineService((config, services) => {
+  return {
+    send: async (to: string, text: string) => {
+      // Access the database through the shared container after assembly:
+      await services.database.query("log email");
+    }
+  };
+});
+
+export type Services = {
+  database: Unit<typeof database>;
+  email: Unit<typeof email>;
+};
+
+export const createServices = serviceCreatorFactory({ database, email });
+```
+
+### 3. A modulok megvalósítása (`modules.ts`)
+
+```typescript
+import { type Unit } from '@atom-forge/laminar';
+import { defineModule, moduleCreatorFactory } from './layers';
+
+export const auth = defineModule((config, services, modules) => {
+  return {
+    login: async (user: string) => {
+      await services.email.send(user, "Welcome!");
+      // PublicLayer<Services> excludes database.pool at compile time
+    }
+  };
+});
+
+export type Modules = {
+  auth: Unit<typeof auth>;
+};
+
+export const createModules = moduleCreatorFactory({ auth });
+```
+
+### 4. Összeállítás és indítás (`app.ts`)
+
+```typescript
+import { createServices } from './services';
+import { createModules } from './modules';
+import { init } from '@atom-forge/laminar';
+
+const config = { smtp: "smtp.example.com" };
+
+// Boot the application
+const services = createServices(config); // synchronous assembly
+const modules = createModules(config, services); // synchronous assembly
+
+await init(services);
+await init(modules);
+
+await modules.auth.login("user@example.com");
+```

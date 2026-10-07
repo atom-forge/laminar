@@ -2,7 +2,7 @@
 
 Laminar is a lightweight, type-safe layered architecture and Dependency Injection (DI) system for TypeScript. It allows you to organize your application logic into layered, well-isolated containers.
 
-The core philosophy is that layers are assembled **lazily** using **factories**, preventing issues related to initialization order or circular dependencies.
+Layers are assembled **synchronously** using **factories**, in `Object.keys(defs)` order. Factories receive the shared container while it is being built. Access later components inside methods or lifecycle hooks after assembly, not during factory execution. Circular references are safe only when access is deferred; destructuring a not-yet-built component captures `undefined`.
 
 ---
 
@@ -15,6 +15,8 @@ A layer is an object structure containing individual components (modules, servic
 ### Factory
 
 A factory is a simple function that creates one component of the layer. It can receive components from other layers, or even other components from its own layer (self-reference). The objects returned by the factories collectively form the completed layer. A factory returns its value directly (synchronously).
+
+There is no dependency graph or automatic sorting. Prefer non-numeric factory names to preserve insertion order. Each creator invocation calls every factory again and builds a new container; there is no global singleton registry. Deferred circular references do not prevent circular method calls from recursing indefinitely.
 
 ### `internal`
 
@@ -31,7 +33,9 @@ return {
 
 ### `PublicLayer<T>`
 
-Recursively filters out properties marked as `internal(...)` from a type. Neighboring layers will only see the `PublicLayer<T>` interface.
+Recursively filters out properties marked as `internal(...)` from a type. Neighboring layers see this restricted interface only when their factory arguments are typed as `PublicLayer<T>`. Function signatures are preserved.
+
+This is compile-time visibility, not runtime filtering or a security boundary: `internal(value)` returns the same value unchanged, and internal properties remain on the object at runtime.
 
 ---
 
@@ -47,7 +51,7 @@ The type definition of a layer. It contains two tools in a tuple:
 
 | Parameter    | Meaning                                                         |
 |--------------|-----------------------------------------------------------------|
-| `OuterArgs`  | The arguments that the resulting `create(...)` function accepts |
+| `OuterArgs`  | The arguments accepted by the creator returned by `create(...)` |
 | `SelfT`      | The type of the container built by the layer                    |
 | `FactoryArgs`| The arguments that each individual factory function receives    |
 
@@ -61,7 +65,7 @@ Utility type: extracts the return type of a factory function (`ReturnType<T>`). 
 
 ### `makeLayer<L>(resolver)`
 
-Creates a layer. Returns a `[define, create]` tuple. The `create(...)` function it produces is synchronous — it returns `SelfT` immediately, as all factories run synchronously.
+Creates a layer. Returns a `[define, create]` tuple. `create(defs, options?)` returns a creator function; calling that creator with `OuterArgs` synchronously builds and returns `SelfT`. Factories and the `assemble` callback must be synchronous; asynchronous startup belongs in `onInit`.
 
 ```ts
 const myLayer = makeLayer<FromLayer<MyLayerType>>(
@@ -71,7 +75,7 @@ const myLayer = makeLayer<FromLayer<MyLayerType>>(
 
 The role of the `resolver` is to assemble the factory arguments tuple based on `outerArgs` (arguments passed to the creator) and `self` (the container currently being assembled).
 
-The creator function returned by `makeLayer` (the second element of the tuple) accepts an optional `options` object as a second argument:
+The `create` helper returned by `makeLayer` (the second element of the tuple) accepts an optional `options` object as a second argument, alongside the factory definitions:
 ```ts
 const createContainer = create(defs, {
   assemble: (self, ...factoryArgs) => {
@@ -91,7 +95,7 @@ export const prismaService = defineService((config, services) => {
   return {
     db: new PrismaClient({ adapter: new PrismaPg(pool) }),
     ...onDispose(() => pool.end()),
-    ...onInit(() => pool.query('SELECT 1')),
+    ...onInit(async () => { await pool.query('SELECT 1'); }),
   };
 });
 ```
@@ -100,7 +104,14 @@ Since the assembly is fully synchronous, creator functions like `createServices`
 
 ### `init(layer)` / `dispose(layer)`
 
-Accepts a layer and recursively walks every component inside it, running its `onInit`/`onDispose` hooks. Both are async and await the hooks. Components without a hook are silently skipped.
+Accepts a layer and recursively walks factory-returned objects branded as components, running their `onInit`/`onDispose` hooks. Arbitrary nested data is not traversed. Both functions await hooks sequentially; components without a hook are skipped.
+
+- `init` uses depth-first traversal, parent before child; `dispose` uses the reverse order. For a flat layer, this is factory definition order and its reverse.
+- An error stops the current call. There is no automatic rollback or cleanup of remaining components.
+- Repeated calls run hooks again; idempotency is the application's responsibility.
+- Traversal has no cycle detection or deduplication. Keep component references in closures rather than cyclic enumerable properties; shared components can have their hooks called more than once.
+- Each object holds one hook of each kind: spreading multiple `onInit` or `onDispose` results overwrites earlier hooks of that kind.
+- Initialize lower layers before higher layers and dispose them in the opposite order; dependencies captured in closures are not discovered automatically.
 
 ```ts
 const services = createServices(config); // synchronous assembly
@@ -122,7 +133,7 @@ For example, a `Services` layer built on top of a `Config` object:
 
 ```ts
 // layers.ts
-import { type FromLayer, type Layer, makeLayer, PublicLayer } from '@atom-forge/laminar';
+import { type FromLayer, type Layer, makeLayer } from '@atom-forge/laminar';
 import type { Config } from './config';
 import type { Services } from './services';
 
@@ -142,10 +153,10 @@ Use `defineService` to write a type-safe factory for the layer.
 
 ```ts
 // services/my-service.ts
-import { defineService } from './layers';
+import { defineService } from '../layers';
 
 export const myService = defineService((config, services) => {
-  // 'services' is the self-reference, allowing access to other services (lazily)
+  // Access later services through the shared container inside methods after assembly.
   return {
     doSomething: () => { console.log(config.someValue); },
   };
@@ -159,7 +170,7 @@ Use `serviceCreatorFactory` to assemble the full layer container from the factor
 ```ts
 // services/index.ts
 import { type Unit } from '@atom-forge/laminar';
-import { serviceCreatorFactory } from './layers';
+import { serviceCreatorFactory } from '../layers';
 import { myService } from './my-service';
 import { otherService } from './other-service';
 
@@ -201,11 +212,11 @@ The following example defines the layers of a typical backend application, built
 
 ```ts
 // layers.ts
-import {type FromLayer, type Layer, makeLayer, PublicLayer} from "@atom-forge/laminar";
+import {type FromLayer, type Layer, makeLayer, type PublicLayer} from "@atom-forge/laminar";
 import type {Services} from "./services";
 import type {Modules} from "./modules";
 import type {Rpc} from "./api";
-import {Config} from "./index";
+import type {Config} from "./config";
 
 // Services layer
 // Creator: (config) => Services
@@ -227,12 +238,12 @@ export const modulesLayer: ModulesLayer = makeLayer<FromLayer<ModulesLayer>>(
 // Creator: (config, modules) => Rpc
 // Factory: (config, modules) => T
 type ApiLayer = Layer<[Config, Modules], Rpc, [Config, PublicLayer<Modules>]>;
-export const apiLayer: ApiLayer = makeLayer<FromLayer<typeof apiLayer>>(
+export const apiLayer: ApiLayer = makeLayer<FromLayer<ApiLayer>>(
 	([config, modules], _self) => [config, modules as PublicLayer<Modules>],
 );
 
 export const [defineService, serviceCreatorFactory] = servicesLayer;
-export const [defineModule, moduleCreatorFactory] = modulesLayer
+export const [defineModule, moduleCreatorFactory] = modulesLayer;
 export const [defineApi, apiCreatorFactory] = apiLayer;
 ```
 
@@ -244,7 +255,7 @@ export const [defineApi, apiCreatorFactory] = apiLayer;
 
 2.  **Modules Layer**:
     *   `moduleCreatorFactory` expects `Config` and the `Services` container (`CreatorArgs: [Config, Services]`).
-    *   Each module factory receives `Config`, the public interface of the services (`PublicLayer<Services>`), and the `Modules` container. `PublicLayer` ensures that modules cannot access any service methods marked as `internal`.
+    *   Each module factory receives `Config`, the public interface of the services (`PublicLayer<Services>`), and the `Modules` container. `PublicLayer` prevents access to service methods marked as `internal` at compile time.
 
 3.  **API Layer**:
     *   `apiCreatorFactory` expects `Config` and the `Modules` container.
@@ -260,11 +271,11 @@ We write a simple email sending service. `defineService` ensures we receive exac
 
 ```ts
 // services/email.ts
-import { defineService } from './layers';
+import { defineService } from '../layers';
 import { internal } from '@atom-forge/laminar';
 
 export const emailService = defineService((config, services) => {
-  // Internal helper function, only accessible within the Services layer
+  // Internal helper function, omitted from PublicLayer<Services> at compile time
   async function connectToSmtp() {
     console.log(`Connecting to ${config.smtpHost}...`);
     // ...
@@ -291,7 +302,7 @@ Collect all services in a single file and use `serviceCreatorFactory` to create 
 ```ts
 // services/index.ts
 import { type Unit } from '@atom-forge/laminar';
-import { serviceCreatorFactory } from './layers';
+import { serviceCreatorFactory } from '../layers';
 import { emailService } from './email';
 
 // The type of the full Services layer containing both public and internal interfaces.
@@ -306,4 +317,106 @@ export const createServices = serviceCreatorFactory({
 });
 ```
 
-When the application starts, calling `createServices(config)` lazily executes the factories to construct the `Services` container. You then initialize the layer using `await init(services)`.
+When the application starts, calling `createServices(config)` immediately executes the factories in definition order to construct a new `Services` container synchronously. You then initialize the layer using `await init(services)`.
+
+---
+
+## Complete Typed Example
+
+### 1. Define the layers (`layers.ts`)
+
+```typescript
+import { type FromLayer, type Layer, makeLayer, type PublicLayer } from '@atom-forge/laminar';
+import type { Services } from './services';
+import type { Modules } from './modules';
+
+export type Config = { smtp: string };
+
+// 1. Services Layer (Creator: (config) => Services; Factory: (config, services) => Service)
+
+type ServicesLayer = Layer<[Config], Services, [Config, Services]>;
+export const servicesLayer: ServicesLayer = makeLayer<FromLayer<ServicesLayer>>(
+  ([config], self) => [config, self]
+);
+export const [defineService, serviceCreatorFactory] = servicesLayer;
+
+// 2. Modules Layer (Creator: (config, services) => Modules; Factory: (config, services, modules) => Module)
+
+type ModulesLayer = Layer<[Config, Services], Modules, [Config, PublicLayer<Services>, Modules]>;
+export const modulesLayer: ModulesLayer = makeLayer<FromLayer<ModulesLayer>>(
+  ([config, services], self) => [config, services as PublicLayer<Services>, self]
+);
+export const [defineModule, moduleCreatorFactory] = modulesLayer;
+```
+
+### 2. Implement the services (`services.ts`)
+
+```typescript
+import { internal, type Unit } from '@atom-forge/laminar';
+import { defineService, serviceCreatorFactory } from './layers';
+
+export const database = defineService((config, services) => {
+  const pool = {}; // setup db pool
+  return {
+    query: async (sql: string) => { /* query */ },
+    pool: internal(pool), // hide database pool from Modules layer
+  };
+});
+
+export const email = defineService((config, services) => {
+  return {
+    send: async (to: string, text: string) => {
+      // Access the database through the shared container after assembly:
+      await services.database.query("log email");
+    }
+  };
+});
+
+export type Services = {
+  database: Unit<typeof database>;
+  email: Unit<typeof email>;
+};
+
+export const createServices = serviceCreatorFactory({ database, email });
+```
+
+### 3. Implement modules (`modules.ts`)
+
+```typescript
+import { type Unit } from '@atom-forge/laminar';
+import { defineModule, moduleCreatorFactory } from './layers';
+
+export const auth = defineModule((config, services, modules) => {
+  return {
+    login: async (user: string) => {
+      await services.email.send(user, "Welcome!");
+      // PublicLayer<Services> excludes database.pool at compile time
+    }
+  };
+});
+
+export type Modules = {
+  auth: Unit<typeof auth>;
+};
+
+export const createModules = moduleCreatorFactory({ auth });
+```
+
+### 4. Assemble and boot (`app.ts`)
+
+```typescript
+import { createServices } from './services';
+import { createModules } from './modules';
+import { init } from '@atom-forge/laminar';
+
+const config = { smtp: "smtp.example.com" };
+
+// Boot the application
+const services = createServices(config); // synchronous assembly
+const modules = createModules(config, services); // synchronous assembly
+
+await init(services);
+await init(modules);
+
+await modules.auth.login("user@example.com");
+```

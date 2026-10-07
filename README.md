@@ -1,6 +1,6 @@
 # @atom-forge/laminar
 
-Laminar is a lightweight, type-safe layered architecture and Dependency Injection (DI) system for TypeScript. It relies on lazy execution of factory functions to assemble containers, preventing circular dependencies and initialization order issues.
+Laminar is a lightweight, type-safe layered architecture and Dependency Injection (DI) system for TypeScript. It assembles containers synchronously through explicit factories. Deferred access to the shared container allows components to reference each other after assembly.
 
 ---
 
@@ -8,7 +8,7 @@ Laminar is a lightweight, type-safe layered architecture and Dependency Injectio
 
 - [English Documentation](docs/en/index.md)
 - [Hungarian Documentation (Magyar nyelvű dokumentáció)](docs/hu/index.md)
-- [LLM Reference (dense reference for AI prompts)](docs/llm/index.md)
+- [AI Guide (start here for AI-assisted development)](README-AI.md)
 
 ---
 
