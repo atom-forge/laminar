@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.2] - 2026-10-07
+
+### Added
+- `README-AI.md` as a concise guide for AI-assisted development, linked from the README and included in the npm package.
+- `AGENT.md` requiring agents to record every change in the changelog as part of the same task.
+
+### Changed
+- Consolidated the separate LLM reference into the English and Hungarian documentation, preserving its complete typed example and implementation constraints.
+
+### Fixed
+- Corrected documentation describing assembly as lazy, clarified compile-time internal visibility and lifecycle behavior, and fixed example imports, layer type parameters, and async initialization callbacks.
+
+---
+
 ## [0.4.1] - 2026-06-16
 
 ### Added
