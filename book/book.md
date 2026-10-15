@@ -1,5 +1,6 @@
 ---
 name: Laminar
+subtitle: "@atom-forge/laminar"
 language: en
 id: atom-forge-laminar
 author: Gergely Laborci
