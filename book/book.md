@@ -1,5 +1,5 @@
 ---
-name: Laminar
+title: Laminar
 subtitle: "@atom-forge/laminar"
 language: en
 id: atom-forge-laminar
