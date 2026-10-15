@@ -3,7 +3,7 @@ name: Laminar
 subtitle: "@atom-forge/laminar"
 language: en
 id: atom-forge-laminar
-author: Gergely Laborci
+author: AtomForge
 tags: [typescript, dependency-injection, architecture]
 intro: Lightweight, type-safe layered architecture and dependency injection for TypeScript.
 children:
