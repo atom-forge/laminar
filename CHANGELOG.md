@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `book/` documentation book in BookMD format (introduction, getting started, layers, internal visibility, lifecycle, layered application, API reference, pitfalls, release history) with diagrams and callouts.
+
 ---
 
 ## [0.4.3] - 2026-10-07
