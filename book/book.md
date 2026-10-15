@@ -16,6 +16,7 @@ children:
   - "[[07-api-reference.md]]"
   - "[[08-pitfalls.md]]"
   - "[[09-release-history.md]]"
+  - "[AI Notes](ai-notes.md)"
 ---
 # Laminar
 
