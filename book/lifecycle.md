@@ -66,12 +66,12 @@ await dispose(services);
 
 ## How traversal works
 
-Every factory result that is an object gets branded internally with a `COMPONENT` symbol. `init` / `dispose` walk **only branded objects**, so a Prisma model, a `Date` or any other arbitrary data inside a component is never traversed.
+Every object or function returned by a factory is registered internally as a component — including results of defined factories called inside another factory, so nested components take part in the lifecycle too. Registration does not modify the result, so frozen objects work. `init` / `dispose` walk **only registered components**, so a Prisma model, a `Date` or any other arbitrary data inside a component is never traversed.
 
 ## Behaviour to know
 
 > [!warning] Errors
-> An error stops the current `init` / `dispose` call. There is no rollback and the remaining components are not cleaned up.
+> An error stops the current `init` call; there is no rollback. `dispose` keeps going: every hook runs, then the error is rethrown — or an `AggregateError` if several hooks failed.
 
 > [!warning] Repeated calls
 > Calling `init` twice runs the hooks twice. Idempotency is your responsibility.
@@ -79,8 +79,8 @@ Every factory result that is an object gets branded internally with a `COMPONENT
 > [!warning] One hook per kind per object
 > Spreading two `onInit` results into the same object overwrites the first one. Combine them in a single function.
 
-> [!danger] No cycle detection
-> The walker does not detect cycles or deduplicate. Keep component references in closures instead of cyclic enumerable properties. A component reachable by two paths will have its hooks called twice.
+> [!note] Each component once
+> The walker visits every component at most once per call, so shared components and cyclic references are safe.
 
 > [!note] Closure dependencies are invisible
 > Laminar does not discover dependencies captured in closures. That is why you order layers yourself.

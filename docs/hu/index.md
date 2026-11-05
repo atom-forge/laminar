@@ -104,12 +104,12 @@ Mivel a szerelés teljesen szinkronban történik, a `createServices` és hasonl
 
 ### `init(layer)` / `dispose(layer)`
 
-Egy réteget fogad el, és rekurzívan bejárja a factory-k által visszaadott, komponensként megjelölt objektumokat, lefuttatva az `onInit`/`onDispose` hookokat. Tetszőleges beágyazott adatokat nem jár be. Mindkét függvény egyesével várja meg a hookokat; a hook nélküli komponenseket átugorja.
+Egy réteget fogad el, és rekurzívan bejárja a benne lévő komponenseket, lefuttatva az `onInit`/`onDispose` hookokat. Komponens minden objektum vagy függvény, amelyet egy factory ad vissza — mind a `create(defs)`-ben felsorolt factory-k, mind a más factory-n belül meghívott definiált factory-k (beágyazott komponensek). A factory-eredményeket a rendszer módosítás nélkül tartja nyilván, így fagyasztott objektumok is támogatottak. Tetszőleges beágyazott adatokat nem jár be. Mindkét függvény egyesével várja meg a hookokat; a hook nélküli komponenseket átugorja.
 
 - Az `init` mélységi bejárást használ, a szülőt a gyerek előtt érinti; a `dispose` ennek fordított sorrendjében fut. Lapos rétegnél ez a factory-k definíciós sorrendje, illetve annak fordítottja.
-- Hiba esetén az aktuális hívás megáll. Nincs automatikus visszagörgetés vagy a maradék komponensek takarítása.
+- Az `init` hiba esetén megáll; nincs automatikus visszagörgetés. A `dispose` hiba esetén is lefuttatja az összes hookot, majd továbbdobja a hibát (több hiba esetén `AggregateError`-t).
 - Ismételt híváskor a hookok újra lefutnak; az idempotenciáról az alkalmazásnak kell gondoskodnia.
-- A bejárás nem érzékeli a ciklusokat és nem szűri ki a többször elért komponenseket. A komponenshivatkozásokat ciklikus, felsorolható mezők helyett closure-ben tároljuk; megosztott komponensek hookjai többször is lefuthatnak.
+- Egy hívás során minden komponenst legfeljebb egyszer érint, így a megosztott komponensek és a körkörös hivatkozások biztonságosak.
 - Egy objektum hooktípusonként egy hookot tárol: több `onInit` vagy `onDispose` eredmény spreadelése felülírja az azonos típusú korábbi hookot.
 - Előbb az alsó, majd a felső rétegeket inicializáljuk, és fordított sorrendben takarítsunk; a closure-ben tárolt függőségeket a rendszer nem deríti fel automatikusan.
 
@@ -420,3 +420,33 @@ await init(modules);
 
 await modules.auth.login("user@example.com");
 ```
+
+---
+
+## Frissítés
+
+### 0.4.x-ről 0.5.0-ra
+
+Az exportált API és a típusai nem változtak, ahogy a szerelés sem. A lifecycle mostantól a dokumentáció szerint működik:
+
+- **A beágyazott komponensek is részt vesznek a lifecycle-ben.** Egy másik factory-n belül meghívott definiált factory mostantól komponenst hoz létre, így lefutnak az `onInit` / `onDispose` hookjai (`init`: a szülője után, `dispose`: előtte). Töröljük azokat a kézi hívásokat, amelyek ezt pótolták — most kétszer futnának le.
+- **A factory-eredmények nem módosulnak.** A komponenseket egy belső nyilvántartás követi rejtett symbol property helyett. A fagyasztott és nem bővíthető eredmények nem dobnak hibát, a megosztott singletonok érintetlenek maradnak, és függvény is lehet hookokkal rendelkező komponens. Egy komponens spread másolata (`{ ...services.db }`) már nem számít komponensnek — a kezelendő objektumot egy factory-ból adjuk vissza. A `laminar.component` symbol megszűnt.
+- **Minden komponenst egyszer érint** egy `init` / `dispose` hívás. A két mezőn keresztül is elérhető komponens hookjai egyszer futnak le, és a körkörös hivatkozások nem okoznak végtelen rekurziót. Ha arra építettünk, hogy a hookok többször lefutnak, azt a logikát hívjuk meg explicit módon. Ha mi magunk hívjuk kétszer az `init`-et vagy a `dispose`-t, a hookok továbbra is kétszer futnak.
+- **A `dispose` hiba után is minden hookot lefuttat.** Egy hibánál az eredeti hibát dobja tovább; többnél egy `AggregateError`-t, amelynek `errors` tömbje a hookok futási sorrendjében tartalmazza őket. Ahol a `dispose` által dobott hibát vizsgáljuk, kezeljük az `AggregateError`-t (lásd lent). Az `init` továbbra is az első hibánál megáll.
+- **A `define` burkoló függvényt ad vissza.** A `defineService(fn) === fn` mostantól `false`, és a visszaadott függvény `name` / `length` értéke eltér. A `define` által visszaadott értéket használjuk.
+
+```ts
+try {
+  await dispose(modules);
+} catch (error) {
+  const errors = error instanceof AggregateError ? error.errors : [error];
+  for (const e of errors) logger.error('dispose failed', e);
+}
+```
+
+### 0.2 / 0.3-ról 0.4-re
+
+- A creatorok közvetlenül a konténert adják vissza, nem `Promise`-t: `const services = createServices(config); await init(services);`
+- A `makeLayer` már nem futtatja automatikusan az `onInit` hookokat (a `skipInit` megszűnt).
+- Az `init` és a `dispose` egyetlen réteget fogad: `dispose(modules, services)` helyett `await dispose(modules); await dispose(services);`.
+- Az aszinkron munkát a factory-kból tegyük át `onInit`-be; a factory-knak szinkronnak kell lenniük.

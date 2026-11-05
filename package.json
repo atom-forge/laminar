@@ -19,8 +19,8 @@
 	"types": "dist/index.d.ts",
 	"exports": {
 		".": {
-			"import": "./dist/index.js",
-			"types": "./dist/index.d.ts"
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
 		}
 	},
 	"repository": {
@@ -36,12 +36,14 @@
 	"scripts": {
 		"build": "tsup",
 		"test": "bun test",
-		"prepublishOnly": "bun run build",
+		"typecheck": "tsc --noEmit",
+		"prepublishOnly": "bun run typecheck && bun test && bun run build",
 		"release": "npm publish --access public",
 		"pub-check": "bun run scripts/pub-check.ts",
 		"pub": "bun run scripts/pub.ts"
 	},
 	"devDependencies": {
+		"@types/bun": "^1.4.4",
 		"@types/node": "^25.3.1",
 		"tsup": "^8.5.1",
 		"typescript": "^5.0.0"

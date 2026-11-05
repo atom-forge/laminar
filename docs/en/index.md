@@ -104,12 +104,12 @@ Since the assembly is fully synchronous, creator functions like `createServices`
 
 ### `init(layer)` / `dispose(layer)`
 
-Accepts a layer and recursively walks factory-returned objects branded as components, running their `onInit`/`onDispose` hooks. Arbitrary nested data is not traversed. Both functions await hooks sequentially; components without a hook are skipped.
+Accepts a layer and recursively walks the components in it, running their `onInit`/`onDispose` hooks. A component is any object or function returned by a factory — both the factories listed in `create(defs)` and defined factories called inside another factory (nested components). Factory results are registered without being modified, so frozen objects are supported. Arbitrary nested data is not traversed. Both functions await hooks sequentially; components without a hook are skipped.
 
 - `init` uses depth-first traversal, parent before child; `dispose` uses the reverse order. For a flat layer, this is factory definition order and its reverse.
-- An error stops the current call. There is no automatic rollback or cleanup of remaining components.
+- An error in `init` stops the call; there is no automatic rollback. `dispose` runs every hook even if some fail, then rethrows the error (or an `AggregateError` if several hooks failed).
 - Repeated calls run hooks again; idempotency is the application's responsibility.
-- Traversal has no cycle detection or deduplication. Keep component references in closures rather than cyclic enumerable properties; shared components can have their hooks called more than once.
+- Each component is visited at most once per call, so shared components and cyclic references are safe.
 - Each object holds one hook of each kind: spreading multiple `onInit` or `onDispose` results overwrites earlier hooks of that kind.
 - Initialize lower layers before higher layers and dispose them in the opposite order; dependencies captured in closures are not discovered automatically.
 
@@ -420,3 +420,33 @@ await init(modules);
 
 await modules.auth.login("user@example.com");
 ```
+
+---
+
+## Upgrading
+
+### From 0.4.x to 0.5.0
+
+The exported API and its types are unchanged, and so is assembly. The lifecycle now behaves as documented:
+
+- **Nested components take part in the lifecycle.** A defined factory called inside another factory now produces a component, so its `onInit` / `onDispose` hooks run (`init`: after its parent, `dispose`: before it). Remove manual calls that compensated for this — they would now run twice.
+- **Factory results are no longer modified.** Components are tracked in an internal registry instead of a hidden symbol property. Frozen and non-extensible results no longer throw, shared singletons stay untouched, and functions can be components with hooks. A spread copy of a component (`{ ...services.db }`) is no longer treated as a component — return the object you want managed from a factory instead. The `laminar.component` symbol no longer exists.
+- **Each component is visited once** per `init` / `dispose` call. A component reachable through two properties has its hooks run once, and cycles no longer cause infinite recursion. If you relied on hooks running more than once, call that logic explicitly. Calling `init` or `dispose` twice yourself still runs the hooks twice.
+- **`dispose` runs every hook, even after an error.** With one failure the original error is rethrown; with several, an `AggregateError` is thrown whose `errors` are in the order the hooks ran. Where you inspect the error thrown by `dispose`, handle `AggregateError` (see below). `init` still stops at the first error.
+- **`define` returns a wrapper.** `defineService(fn) === fn` is now `false`, and the `name` / `length` of the returned function differ. Use the value returned by `define`.
+
+```ts
+try {
+  await dispose(modules);
+} catch (error) {
+  const errors = error instanceof AggregateError ? error.errors : [error];
+  for (const e of errors) logger.error('dispose failed', e);
+}
+```
+
+### From 0.2 / 0.3 to 0.4
+
+- Creators return the container directly, not a `Promise`: `const services = createServices(config); await init(services);`
+- `makeLayer` no longer runs `onInit` automatically (`skipInit` is gone).
+- `init` and `dispose` accept a single layer: call `await dispose(modules); await dispose(services);` instead of `dispose(modules, services)`.
+- Move asynchronous work from factories into `onInit`; factories must be synchronous.

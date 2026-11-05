@@ -1,4 +1,4 @@
-import { COMPONENT } from './symbols.js';
+import { markComponent } from './component.js';
 
 type AnyRecord = Record<string, unknown>;
 
@@ -8,9 +8,7 @@ function assemble<T extends AnyRecord>(
 ): T {
 	const items = {} as T;
 	for (const key of Object.keys(defs) as Array<keyof T>) {
-		const value = defs[key](...getArgs(items));
-		if (value && typeof value === 'object') (value as any)[COMPONENT] = true;
-		items[key] = value;
+		items[key] = markComponent(defs[key](...getArgs(items)));
 	}
 	return items;
 }
@@ -45,18 +43,26 @@ export type Layer<
 	) => (...outerArgs: OuterArgs) => SelfT,
 ];
 
-/** Extracts the tuple form [OuterArgs, SelfT, FactoryArgs] from a LayerShape type. */
+/** Extracts the tuple form [OuterArgs, SelfT, FactoryArgs] from a Layer type. */
 export type FromLayer<T extends Layer<any, any, any>> =
 	T extends Layer<infer O, infer S, infer F> ? [O, S, F] : never;
 
 /** Resolves the actual unit type a factory produces. */
 export type Unit<T extends (...args: any[]) => any> = ReturnType<T>;
 
+/**
+ * Creates a layer and returns its `[define, create]` tuple.
+ * `resolver(outerArgs, self)` maps the creator's arguments and the container being built to the factory arguments.
+ */
 // Overload: tuple form [OuterArgs, SelfT, FactoryArgs]
 export function makeLayer<
 	L extends [unknown[], AnyRecord, unknown[]],
 >(resolver: (outerArgs: L[0], self: L[1]) => L[2]): Layer<L[0], L[1], L[2]>;
 
+/**
+ * Creates a layer and returns its `[define, create]` tuple.
+ * `resolver(outerArgs, self)` maps the creator's arguments and the container being built to the factory arguments.
+ */
 // Overload: traditional 3 separate type params
 export function makeLayer<
 	OuterArgs extends unknown[],
@@ -66,7 +72,8 @@ export function makeLayer<
 
 // Implementation
 export function makeLayer(resolver: any): any {
-	const define = <T>(factory: (...args: any[]) => T) => factory;
+	// Results of defined factories are registered as components, so nested factory calls take part in the lifecycle too.
+	const define = <T>(factory: (...args: any[]) => T) => (...args: any[]): T => markComponent(factory(...args));
 	const create = (defs: any, options?: { assemble?: (self: any, ...args: any[]) => void }) => (...outerArgs: any[]): any => {
 		const layer = assemble(defs, (self) => resolver(outerArgs, self));
 		if (options?.assemble) {

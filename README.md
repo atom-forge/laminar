@@ -6,6 +6,7 @@ Laminar is a lightweight, type-safe layered architecture and Dependency Injectio
 
 ## Documentation
 
+- [Laminar book (full documentation)](https://books.atom-forge.eu)
 - [English Documentation](docs/en/index.md)
 - [Hungarian Documentation (Magyar nyelvű dokumentáció)](docs/hu/index.md)
 - [AI Guide (start here for AI-assisted development)](README-AI.md)

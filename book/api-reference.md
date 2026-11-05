@@ -50,12 +50,12 @@ Returns `value` unchanged, typed so that `PublicLayer` omits it.
 
 ### `init(layer)` / `dispose(layer)`
 
-`(layer: object) => Promise<void>`. Walks branded components and awaits hooks sequentially.
+`(layer: object) => Promise<void>`. Walks registered components (each at most once) and awaits hooks sequentially.
 
 | | `init` | `dispose` |
 |---|---|---|
 | Order | depth-first, parent first | reverse of `init` |
-| On error | stops, no rollback | stops, no rollback |
+| On error | stops, no rollback | runs all hooks, then rethrows (`AggregateError` if several failed) |
 | Takes | a single layer | a single layer |
 
 > [!note] Single layer

@@ -1,4 +1,5 @@
-import { COMPONENT, DISPOSE, INIT } from './symbols.js';
+import { isComponent } from './component.js';
+import { DISPOSE, INIT } from './symbols.js';
 
 type DisposeFn = () => void | Promise<void>;
 type InitFn = () => void | Promise<void>;
@@ -9,29 +10,45 @@ export const onDispose = (fn: DisposeFn) => ({ [DISPOSE]: fn });
 /** Declares an init hook on a factory's return object — spread it into the returned object. */
 export const onInit = (fn: InitFn) => ({ [INIT]: fn });
 
-function walk(obj: object): unknown[] {
-	const result: unknown[] = [];
-	for (const key of Object.keys(obj)) {
-		const value = (obj as any)[key];
-		if (!value || typeof value !== 'object' || !value[COMPONENT]) continue;
+/** Collects every component reachable from `root` depth-first, parent before child, each at most once. */
+function walk(root: object, seen = new Set<object>([root]), result: object[] = []): object[] {
+	for (const key of Object.keys(root)) {
+		const value = (root as any)[key];
+		if (!isComponent(value) || seen.has(value)) continue;
+		seen.add(value);
 		result.push(value);
-		result.push(...walk(value));
+		walk(value, seen, result);
 	}
 	return result;
 }
 
+/**
+ * Runs the `onInit` hooks of every component in the layer sequentially, depth-first, parent before child.
+ * Stops at the first error.
+ */
 export async function init(layer: object): Promise<void> {
 	for (const value of walk(layer)) {
-		if (typeof (value as any)[INIT] === 'function') {
-			await (value as any)[INIT]();
-		}
+		const hook = (value as any)[INIT];
+		if (typeof hook === 'function') await hook();
 	}
 }
 
+/**
+ * Runs the `onDispose` hooks of every component in the layer sequentially, in the reverse order of `init`.
+ * Every hook runs even if an earlier one fails; a single failure is rethrown as is,
+ * several failures are thrown together as an `AggregateError`.
+ */
 export async function dispose(layer: object): Promise<void> {
+	const errors: unknown[] = [];
 	for (const value of walk(layer).reverse()) {
-		if (typeof (value as any)[DISPOSE] === 'function') {
-			await (value as any)[DISPOSE]();
+		const hook = (value as any)[DISPOSE];
+		if (typeof hook !== 'function') continue;
+		try {
+			await hook();
+		} catch (error) {
+			errors.push(error);
 		}
 	}
+	if (errors.length === 1) throw errors[0];
+	if (errors.length > 1) throw new AggregateError(errors, `${errors.length} dispose hooks failed`);
 }

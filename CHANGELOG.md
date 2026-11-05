@@ -8,7 +8,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `book/` documentation book in BookMD format (introduction, getting started, layers, internal visibility, lifecycle, layered application, API reference, pitfalls, release history) with diagrams and callouts.
+- `book/` documentation book in BookMD format with diagrams and callouts: the front page (`book.md`) holds the overview, audience and reading guide, followed by unnumbered chapters (getting started, layers and factories, internal visibility, lifecycle, layered application, API reference, pitfalls, upgrading) and AI Notes.
+- CI workflow running typecheck, tests and build on pushes and pull requests; the publish workflow and `prepublishOnly` now also typecheck and test before publishing.
+- `book/upgrading.md` upgrade guide describing the behaviour changes of the next release in detail, with a checklist, followed by the 0.4 migration notes and the release history.
+- "Upgrading" section in the English and Hungarian docs, derived from the book's upgrade guide.
+- Documentation rules in `AGENTS.md`: the `book/` BookMD book is the source of truth (intro, usage chapters, upgrading, AI Notes); changes flow one way to `docs/en/` (a single page or chapter files mirroring the book, depending on size; AI Notes stays book-only) and then to its Hungarian translation in `docs/hu/`; every change that may require user action is documented in `book/upgrading.md` (with `Unreleased` as the target version until it is decided) and marked **Breaking:** in the changelog; `README-AI.md` is kept in sync with the AI Notes chapter.
+- Link to the published book (https://books.atom-forge.eu) in `README.md`.
+- `typecheck` script and `@types/bun` so the test suite is type-checked.
+- Tests for nested components, frozen and function components, shared/cyclic traversal, dispose error handling, `PublicLayer` and self-reference.
+
+### Changed
+- **Breaking:** Components are now tracked in an internal `WeakSet` instead of being branded with a symbol property, so factory results are no longer mutated and spread copies of components are no longer treated as components.
+- **Breaking:** `dispose` runs every hook even when some fail, then rethrows the error, or an `AggregateError` when several hooks failed.
+- **Breaking:** `define` returns a wrapper that registers the factory result, so it is no longer identical to the function passed in.
+- `package.json` `exports` lists the `types` condition first.
+- Renamed `AGENT.md` to `AGENTS.md`, the conventional agent instruction file name.
+
+### Removed
+- Outdated planning notes (`async.md`, `async-fix.md`, `dispose.md`, `0-4-0-plan.md`) describing superseded APIs.
+
+### Fixed
+- **Breaking:** `onInit` / `onDispose` hooks of nested components (defined factories called inside another factory) now run; previously only top-level factory results were traversed.
+- Factories returning frozen or non-extensible objects no longer throw during assembly.
+- Function components can declare lifecycle hooks.
+- `init` / `dispose` visit each component once, preventing duplicate hook calls and infinite recursion on cyclic references.
+- Typed `makeLayer` usage in the test suite, which previously failed type checking.
+
 
 ---
 

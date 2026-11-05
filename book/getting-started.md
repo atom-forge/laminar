@@ -5,6 +5,14 @@ type: chapter
 
 This chapter builds a single `Services` layer end to end. Four steps: define the layer, write factories, assemble, start.
 
+## Installation
+
+```sh
+npm install @atom-forge/laminar
+```
+
+The package is ESM-only and ships its own type declarations.
+
 ## 1. Define the layer
 
 ```ts
