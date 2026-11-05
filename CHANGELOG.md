@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.5.0] - 2026-11-05
+
 ### Added
 - `book/` documentation book in BookMD format with diagrams and callouts: the front page (`book.md`) holds the overview, audience and reading guide, followed by unnumbered chapters (getting started, layers and factories, internal visibility, lifecycle, layered application, API reference, pitfalls, upgrading) and AI Notes.
 - CI workflow running typecheck, tests and build on pushes and pull requests; the publish workflow and `prepublishOnly` now also typecheck and test before publishing.
